@@ -27,15 +27,33 @@
 
     <button id="send-data" style="margin-left: 25px">Send</button>
 
-    <div style="
+    <div v-if="selectedImage" style="
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;">
+      <button @click="selectedImage = null">Back</button>
+      <img style="width: 100%; height: 100%;" :src="selectedImage.baseUrl" />
+    </div>
+    <div v-else-if="selectedAlbum" style="
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;">
+      <button @click="selectedAlbum = null">Back</button>
+      <div v-for="mediaItem in selectedAlbum.mediaItems" style="margin: 2rem;">
+        <a @click="selectedImage = mediaItem; $event.preventDefault();">
+          <img style="width: 200px; height: 200px;" :src="mediaItem.baseUrl" />
+        </a>
+      </div>
+    </div>
+    <div v-else style="
     display: flex;
     width: 100%;
     flex-wrap: wrap;">
       <div v-for="album in albums" style="margin: 2rem;">
-      <a href="#" @click="selectAlbum(album); $event.preventDefault();">
-        <img style="width: 200px; height: 200px;" :src="album.coverPhotoBaseUrl" />
-        <p>{{ album.title }}</p>
-      </a>
+        <a @click="selectAlbum(album); $event.preventDefault();">
+          <img style="width: 200px; height: 200px;" :src="album.coverPhotoBaseUrl" />
+          <p>{{ album.title }}</p>
+        </a>
       </div>
     </div>
   </div>
@@ -46,13 +64,18 @@
 
       data: () => ({
         apiToken: null,
-        albums: [{id: 'allMedia', title: 'Kaikki'}],
-        selectedAlbum: {},
+        albums: [{ id: 'allMedia', title: 'Kaikki' }],
+        selectedAlbum: null,
+        selectedImage: null,
       }),
 
       methods: {
         selectAlbum(album) {
           this.selectedAlbum = album;
+          window.sendChromecastData({
+            type: "selectedAlbum",
+            text: JSON.stringify(this.selectedAlbum),
+          })
         },
         async showAlbums() {
           const config = {
@@ -80,12 +103,67 @@
           }
 
           console.log(this.albums)
+        },
+        fetchPage() {
+          // Fetch next page for current album
+          const config = {
+            headers: { Authorization: `Bearer ${this.apiToken}` }
+          };
+          const album = this.selectedAlbum;
+          let axiosPromise;
+          if (album.pageToken == "stop") {
+            return;
+          }
+          if (album.id === "allMedia") {
+            const pageTokenQuery = !!album.pageToken ? `&pageToken=${album.pageToken}` : '';
+            axiosPromise = axios.get(
+              `https://photoslibrary.googleapis.com/v1/mediaItems?pageSize=100${pageTokenQuery}`,
+              config
+            )
+          } else {
+            axiosPromise = axios.post(
+              'https://photoslibrary.googleapis.com/v1/mediaItems:search',
+              {
+                "albumId": album.id,
+                "pageSize": "100",
+                "pageToken": (album.pageToken || ""),
+              },
+              config
+            )
+          }
+          axiosPromise.then(resp => {
+            if (album.images == undefined) {Vue.set(album, 'images', [])}
+            if (album.videos == undefined) {Vue.set(album, 'videos', [])}
+            if (album.mediaItems == undefined) {Vue.set(album, 'mediaItems', [])}
+            album.pageToken = resp.data.nextPageToken;
+            if (!album.pageToken) {
+              album.pageToken = "stop";
+            }
+            for (const mediaItem of resp.data.mediaItems) {
+              album.mediaItems.push(mediaItem)
+              if (mediaItem.mimeType.startsWith('video')) {
+                album.videos.push(mediaItem)
+              } else {
+                album.images.push(mediaItem)
+              }
+            }
+          })
+
         }
       },
 
       watch: {
         apiToken() {
           this.showAlbums();
+        },
+        selectedAlbum() {
+          this.fetchPage();
+        },
+        selectedImage(newValue) {
+          window.sendChromecastData({
+            type: "selectedImage",
+            text: JSON.stringify(newValue),
+          })
         }
       }
     })
@@ -118,7 +196,15 @@
       }
     }
 
-    $('#send-data').click(function() {
+    window.sendChromecastData = function(data) {
+      var castSession = cast.framework.CastContext.getInstance().getCurrentSession();
+      console.log(data)
+      if (castSession) {
+        castSession.sendMessage('urn:x-cast:com.eerovil.chromecast-photos', data);
+      }
+    }
+
+    $('#send-data').click(function () {
       var vueEl = document.querySelector('#vue-app')
       var castSession = cast.framework.CastContext.getInstance().getCurrentSession();
       var albumToSend = Object.entries(vueEl.__vue__.selectedAlbums).filter(entry => entry[1]).map(entry => entry[0])
