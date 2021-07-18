@@ -25,31 +25,23 @@
     </div>
     <hr>
 
-    <button id="send-data" style="margin-left: 25px">Send</button>
-
-    <div v-if="selectedMedia" style="
+    <div v-if="selectedAlbum" style="
     display: flex;
     width: 100%;
     flex-wrap: wrap;">
-      <button @click="selectedMedia = null">Back</button>
-      <img style="width: 100%; height: 100%;" :src="selectedMedia.baseUrl" />
-    </div>
-    <div v-else-if="selectedAlbum" style="
-    display: flex;
-    width: 100%;
-    flex-wrap: wrap;">
-      <button @click="selectedAlbum = null">Back</button>
-      <div v-for="mediaItem in selectedAlbum.mediaItems" style="margin: 2rem;">
+      <button @click="selectedAlbum = null">Back</button><br>
+      <div v-for="mediaItem in selectedAlbum.mediaItems" style="margin: 1.2rem;">
         <a @click="selectedMedia = mediaItem; $event.preventDefault();">
-          <img style="width: 200px; height: 200px;" :src="mediaItem.baseUrl" />
+          <img style="width: 200px; height: 200px; object-fit: cover;" :src="mediaItem.baseUrl" />
         </a>
       </div>
+      <button style="width: 200px; height: 200px; margin: 1.2rem;" @click="fetchPage()">Lisää</button>
     </div>
     <div v-else style="
     display: flex;
     width: 100%;
     flex-wrap: wrap;">
-      <div v-for="album in albums" style="margin: 2rem;">
+      <div v-for="album in albums" style="margin: 1.2rem;">
         <a @click="selectAlbum(album); $event.preventDefault();">
           <img style="width: 200px; height: 200px;" :src="album.coverPhotoBaseUrl" />
           <p>{{ album.title }}</p>

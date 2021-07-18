@@ -30,10 +30,9 @@ body {
     top: 0;
 }
 #right {
-    right: 0;
-}
-#right * {
-    float: right
+    width: 100%;
+    display: flex;
+    justify-content: center;
 }
 span.info {
     position: absolute;
@@ -325,14 +324,6 @@ waitForApiToken.then(() => {
     mainLoop()
     fetchPage()
 })
-
-window.setData = function(_apiToken, _albums) {
-    apiToken = _apiToken;
-    albums = _albums;
-    albums[0].mediaItems = []
-    albums[0].videos = []
-    albums[0].images = []
-}
 
 window.handleEvent = function(customEvent) {
     if (customEvent.data.type == "message") {
