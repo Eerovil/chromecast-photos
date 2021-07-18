@@ -73,8 +73,8 @@
         selectAlbum(album) {
           this.selectedAlbum = album;
           window.sendChromecastData({
-            type: "selectedAlbum",
-            text: JSON.stringify(this.selectedAlbum),
+            type: "albums",
+            text: JSON.stringify([this.selectedAlbum]),
           })
         },
         async showAlbums() {
@@ -153,11 +153,17 @@
       },
 
       watch: {
-        apiToken() {
+        apiToken(newValue) {
           this.showAlbums();
+          window.sendChromecastData({
+            type: "apiToken",
+            text: newValue,
+          })
         },
-        selectedAlbum() {
-          this.fetchPage();
+        selectedAlbum(newValue) {
+          if (newValue) {
+            this.fetchPage();
+          }
         },
         selectedImage(newValue) {
           window.sendChromecastData({

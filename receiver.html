@@ -68,9 +68,6 @@ var nextMedia;
 var turn = 'left';  // Which image/video will change
 var boxes = [];
 var apiToken = null;
-var images = [];
-var videos = [];
-var hiddenMediaIds = new Set();
 var albums = [];
 var fetchPageTimeout = null;
 var player = document.querySelector("#castMediaElement")
@@ -91,14 +88,10 @@ if (window.location.href.indexOf('localhost') == -1) {
         }
         if (customEvent.data.type == "albums") {
             albums = JSON.parse(customEvent.data.text).map(albumId => ({id: albumId}));
+            albums[0].mediaItems = []
+            albums[0].videos = []
+            albums[0].images = []
             console.log("Got albums:", albums)
-            images = [];
-            videos = [];
-        }
-        if (customEvent.data.type == "hiddenAlbums") {
-            hiddenAlbums = JSON.parse(customEvent.data.text).map(albumId => ({id: albumId}));
-            console.log("Got hiddenAlbums:", hiddenAlbums)
-            hiddenMediaIds = new Set();
         }
     });
     // Cast api will automatically use castMediaElement as player
@@ -130,13 +123,6 @@ window.onerror = errorHandler;
 function initBoxes() {
     boxes = [
         {
-            id: "left",
-            currMedia: null,
-            nextMedia: null,
-            prevChange: null,  // Last changed
-            nextMediaReady: true,
-        },
-        {
             id: "right",
             currMedia: null,
             nextMedia: null,
@@ -146,7 +132,7 @@ function initBoxes() {
     ]
 
     player.addEventListener('canplaythrough', function (event) {
-        let box = boxes[1];
+        let box = boxes[0];
         if (box.nextMedia) {
             box.nextMediaReady = true;
             log("Box " + box.id + " video nextMediaReady.")
@@ -154,7 +140,7 @@ function initBoxes() {
     });
 
     player.addEventListener('error', function (event) {
-        let box = boxes[1];
+        let box = boxes[0];
         if (box.nextMedia) {
             log("Box " + box.id + " video nextMedia error.")
         } else if (box.currMedia) {
@@ -188,32 +174,30 @@ function preloadMediaItem(box) {
 }
 
 function fetchNext(box) {
-    box.nextMedia = null;
-    if (box.id == "right" && box.currMedia && box.currMedia.mimeType.match(/^image/)) {
-        // Get video
-        let unPlayedVideos = videos.filter(mediaItem => !mediaItem.played)
-        if (unPlayedVideos.length == 0 && videos.length > 0) {
-            console.log("All videos played, resetting.")
-            videos.forEach(mediaItem => {
-                mediaItem.played = false;
-            })
-            unPlayedVideos = videos;
-        }
-        box.nextMedia = _.sample(unPlayedVideos)
-    } else {
-        // Get image
-        let unPlayedImages = images.filter(mediaItem => !mediaItem.played)
-        if (unPlayedImages.length == 0 && images.length > 0) {
-            console.log("All images played, resetting.")
-            images.forEach(mediaItem => {
-                mediaItem.played = false;
-            })
-            unPlayedImages = images;
-        }
-        box.nextMedia = _.sample(unPlayedImages)
+    const album = albums[0];
+    if (!album) {
+        console.log("No album!")
+        return
     }
+    if (!box.currMedia) {
+        box.nextMedia = album.mediaItems[0];
+    } else {
+        let counter = 0;
+        for (const mediaItem of album.mediaItems) {
+            if (box.currMedia.id == mediaItem.id) {
+                box.nextMedia = album.mediaItems[counter + 1];
+                break;
+            }
+            counter += 1;
+        }
+        if (album.mediaItems.length - counter < 3) {
+            console.log("New page needed")
+            debugger;
+            fetchPage();
+        }
+    }
+
     if (box.nextMedia) {
-        box.nextMedia.played = true;
         preloadMediaItem(box)
     } else {
         setTimeout(() => fetchNext(box), 1000)
@@ -286,7 +270,7 @@ function fetchPage() {
         headers: { Authorization: `Bearer ${apiToken}` }
     };
     console.log(albums)
-    if (images.length > 5000) {
+    if (albums[0].images.length > 5000) {
         console.log("Stopping image fetch, more than 5000")
         return;
     }
@@ -318,43 +302,15 @@ function fetchPage() {
                 album.pageToken = "stop";
             }
             for (const mediaItem of resp.data.mediaItems) {
-                if (hiddenMediaIds.has(mediaItem.id)) {
-                    console.log("Mediaitem hidden: ", mediaItem);
-                    continue;
-                }
+                album.mediaItems.push(mediaItem)
                 if (mediaItem.mimeType.startsWith('video')) {
-                    videos.push(mediaItem)
+                    album.videos.push(mediaItem)
                 } else {
-                    images.push(mediaItem)
+                    album.images.push(mediaItem)
                 }
             }
         })
     }
-    for (const album of hiddenAlbums) {
-        let axiosPromise;
-        if (album.pageToken == "stop") {
-            continue;
-        }
-        axios.post(
-            'https://photoslibrary.googleapis.com/v1/mediaItems:search',
-            {
-                "albumId": album.id,
-                "pageSize": "100",
-                "pageToken": (album.pageToken || ""),
-            },
-            config
-        ).then(resp => {
-            album.pageToken = resp.data.nextPageToken;
-            if (!album.pageToken) {
-                album.pageToken = "stop";
-            }
-            for (const mediaItem of resp.data.mediaItems) {
-                hiddenMediaIds.add(mediaItem.id)
-            }
-        })
-    }
-    // Wait longer for multiple albums to keep quota better
-    fetchPageTimeout = setTimeout(fetchPage, 10 * 1000 * albums.length);
 }
 
 waitForApiToken = new Promise((resolve, reject) => {
@@ -378,10 +334,12 @@ waitForApiToken.then(() => {
     fetchPage()
 })
 
-window.setData = function(_apiToken, _albums, _hiddens) {
+window.setData = function(_apiToken, _albums) {
     apiToken = _apiToken;
     albums = _albums;
-    hiddenAlbums = _hiddens || [];
+    albums[0].mediaItems = []
+    albums[0].videos = []
+    albums[0].images = []
 }
 
 window.resetData = function() {
