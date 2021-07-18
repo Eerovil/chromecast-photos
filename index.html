@@ -1,406 +1,226 @@
-<!DOCTYPE html>
 <html>
+
 <head>
-<title>Eeron Dashboard</title>
-<meta charset="utf-8">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js" integrity="sha512-bZS47S7sPOxkjU/4Bt0zrhEtWx0y0CRkhEp8IckzK+ltifIIE9EMIMTuT/mEzoIMewUINruDBIR/jJnbguonqQ==" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js" integrity="sha512-WFN04846sdKMIP5LKNphMaWzU7YpMyCU245etK3g/2ARYbPK9Ub18eG+ljU96qKRCWh+quCY7yefSmlkQw1ANQ==" crossorigin="anonymous"></script>
-  <!-- Post load all the goods used to interact with sender. -->
-  <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
-
-  <script type="text/javascript"
-      src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js">
-  </script>
-<style>
-body {
-    width: 100%;
-    margin: 0;
-    background-color: black;
-}
-.video, .img {
-    display: none;
-    height: 100%;
-}
-.video {
-    z-index: 9999;
-}
-#left, #right {
-    position: absolute;
-    height: 100vh;
-    top: 0;
-}
-#right {
-    right: 0;
-}
-#right * {
-    float: right
-}
-span.info {
-    position: absolute;
-    bottom: 0.5rem;
-    right: 1rem;
-    color: white;
-}
-#message {
-    color: white;
-    font-size: 3rem;
-}
-</style>
+  <title>Start</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"
+    integrity="sha512-bZS47S7sPOxkjU/4Bt0zrhEtWx0y0CRkhEp8IckzK+ltifIIE9EMIMTuT/mEzoIMewUINruDBIR/jJnbguonqQ=="
+    crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
 </head>
+
 <body>
-<div id="right">
-    <video id="castMediaElement" class="video" loop>
-    Your browser does not support the video tag.
-    </video>
-    <span class="info"></span>
-    <img class="img">
-    </img>
-</div>
-<div id="message">
-    Waiting for api key...
-</div>
-<script>
+  <div id="vue-app">
+    <div style="display: flex; justify-content: flex-end; flex-wrap: wrap;">
+      <div style="width: 150px; height: 150px;">
+        <google-cast-launcher></google-cast-launcher>
+      </div>
+      <div>
+        <button id="sign-in-or-out-button" style="margin-left: 25px">Sign In/Authorize</button>
+        <button id="revoke-access-button" style="display: none; margin-left: 25px">Revoke access</button>
 
-window.onload = function() {
+        <div id="auth-status" style="display: inline; padding-left: 25px"></div>
+      </div>
+    </div>
+    <hr>
 
-var changeSecs = 10;
-var nextMedia;
-var turn = 'left';  // Which image/video will change
-var boxes = [];
-var apiToken = null;
-var images = [];
-var videos = [];
-var hiddenMediaIds = new Set();
-var albums = [];
-var fetchPageTimeout = null;
-var player = document.querySelector("#castMediaElement")
+    <button id="send-data" style="margin-left: 25px">Send</button>
 
-if (window.location.href.indexOf('localhost') == -1) {
-    const context = cast.framework.CastReceiverContext.getInstance();
-    context.addCustomMessageListener('urn:x-cast:com.eerovil.chromecast-photos', function (customEvent) {
-        if (customEvent.data.type == "message") {
-            document.getElementById("message").innerHTML = customEvent.data.text;
-            if (customEvent.data.text && customEvent.data.text.startsWith('https')) {
-                baseUrl = customEvent.data.text;
-                log("baseUrl updated to " + baseUrl)
-            }
-        }
-        if (customEvent.data.type == "apiToken") {
-            console.log("Got api token!")
-            apiToken = customEvent.data.text;
-        }
-        if (customEvent.data.type == "albums") {
-            albums = JSON.parse(customEvent.data.text).map(albumId => ({id: albumId}));
-            console.log("Got albums:", albums)
-            images = [];
-            videos = [];
-        }
-        if (customEvent.data.type == "hiddenAlbums") {
-            hiddenAlbums = JSON.parse(customEvent.data.text).map(albumId => ({id: albumId}));
-            console.log("Got hiddenAlbums:", hiddenAlbums)
-            hiddenMediaIds = new Set();
-        }
-    });
-    // Cast api will automatically use castMediaElement as player
-    const playerManager = context.getPlayerManager();
+    <div style="
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;">
+      <div v-for="album in albums" style="margin: 2rem;">
+      <a href="#" @click="selectAlbum(album); $event.preventDefault();">
+        <img style="width: 200px; height: 200px;" :src="album.coverPhotoBaseUrl" />
+        <p>{{ album.title }}</p>
+      </a>
+      </div>
+    </div>
+  </div>
+  <script>
 
-    const playerData = {};
-    const playerDataBinder = new cast.framework.ui.PlayerDataBinder(playerData);
+    new Vue({
+      el: "#vue-app",
 
-    const options = new cast.framework.CastReceiverOptions();
+      data: () => ({
+        apiToken: null,
+        albums: [{id: 'allMedia', title: 'Kaikki'}],
+        selectedAlbum: {},
+      }),
 
-    options.disableIdleTimeout = true;
-
-    context.start(options);
-}
-
-function log(message) {
-    if (message.indexOf(' left') > -1) {
-        return;
-    }
-    console.log("local: ", message)
-}
-
-function errorHandler(msg, url, lineNo, columnNo, error) {
-    log("Error! " + msg + " " + url + " " + lineNo)
-}
-
-window.onerror = errorHandler;
-
-function initBoxes() {
-    boxes = [
-        {
-            id: "left",
-            currMedia: null,
-            nextMedia: null,
-            prevChange: null,  // Last changed
-            nextMediaReady: true,
+      methods: {
+        selectAlbum(album) {
+          this.selectedAlbum = album;
         },
-        {
-            id: "right",
-            currMedia: null,
-            nextMedia: null,
-            prevChange: null,  // Last changed
-            nextMediaReady: true,
-        },
-    ]
+        async showAlbums() {
+          const config = {
+            headers: { Authorization: `Bearer ${this.apiToken}` }
+          };
 
-    player.addEventListener('canplaythrough', function (event) {
-        let box = boxes[1];
-        if (box.nextMedia) {
-            box.nextMediaReady = true;
-            log("Box " + box.id + " video nextMediaReady.")
-        }
-    });
+          let pageToken = "";
 
-    player.addEventListener('error', function (event) {
-        let box = boxes[1];
-        if (box.nextMedia) {
-            log("Box " + box.id + " video nextMedia error.")
-        } else if (box.currMedia) {
-            log("Box " + box.id + " video currMedia error.")
-            box.currMedia.error = true;
-        }
-    });
-
-}
-function buildFullUrl(mediaItem) {
-    return mediaItem.baseUrl + "=w2048-h1024";
-}
-
-function preloadMediaItem(box) {
-    if (box.nextMedia.mimeType.indexOf('image/') === 0) {
-        (new Image()).src = buildFullUrl(box.nextMedia);
-        box.nextMediaReady = true;
-        log("Box " + box.id + " (image) nextMedia = " + box.nextMedia.id)
-    } else if (box.nextMedia.mimeType.indexOf('video/') === 0) {
-        // Load video in background
-        const boxEl = document.querySelector('#' + box.id)
-        player.setAttribute('loop', '')
-        player.setAttribute('src', box.nextMedia.baseUrl + "=dv")
-        player.setAttribute('type', box.nextMedia.mimeType)
-        player.load()
-        box.nextMediaReady = true;
-        const nextMediaId = box.nextMedia.id
-        log("Box " + box.id + " (video) nextMedia = " + nextMediaId)
-
-    }
-}
-
-function fetchNext(box) {
-    box.nextMedia = null;
-    if (box.id == "right" && box.currMedia && box.currMedia.mimeType.match(/^image/)) {
-        // Get video
-        let unPlayedVideos = videos.filter(mediaItem => !mediaItem.played)
-        if (unPlayedVideos.length == 0 && videos.length > 0) {
-            console.log("All videos played, resetting.")
-            videos.forEach(mediaItem => {
-                mediaItem.played = false;
+          while (pageToken === "" || !!pageToken) {
+            await axios.get(
+              `https://photoslibrary.googleapis.com/v1/albums?pageSize=50${pageToken}`,
+              config
+            ).then(resp => resp.data).then(data => {
+              pageToken = null;
+              if (data && data.nextPageToken) {
+                pageToken = `&pageToken=${data.nextPageToken}`
+              }
+              return data.albums;
+            }).then(albums => {
+              albums.forEach(album => {
+                this.albums.push(album)
+              })
+              return albums
             })
-            unPlayedVideos = videos;
-        }
-        box.nextMedia = _.sample(unPlayedVideos)
-    } else {
-        // Get image
-        let unPlayedImages = images.filter(mediaItem => !mediaItem.played)
-        if (unPlayedImages.length == 0 && images.length > 0) {
-            console.log("All images played, resetting.")
-            images.forEach(mediaItem => {
-                mediaItem.played = false;
-            })
-            unPlayedImages = images;
-        }
-        box.nextMedia = _.sample(unPlayedImages)
-    }
-    if (box.nextMedia) {
-        box.nextMedia.played = true;
-        preloadMediaItem(box)
-    } else {
-        setTimeout(() => fetchNext(box), 1000)
-    }
-}
+          }
 
-function mainLoop() {
-    try {
-    for (let box of boxes) {
-        const now = new Date();
-        const elapsed = box.prevChange == null ? null : ((now.getTime() - box.prevChange.getTime()) / 1000.0)
-        let shouldChange = (box.prevChange == null || elapsed > changeSecs)
-        if (box.currMedia && box.currMedia.mimeType.indexOf('video/') === 0 && player.duration) {
-            let videoLength = player.duration;
-            if (videoLength > (60 * 5)) {
-                videoLength = (60 * 1)  // Show only 1 min of over 5 min videos
-            }
-            shouldChange = shouldChange && elapsed > videoLength;
+          console.log(this.albums)
         }
-        const hasError = (box.currMedia || {}).error
-        if (box.nextMedia && (shouldChange || hasError)) {
-            log("Box " + box.id + " shouldChange" + (hasError ? " has error!" : ""))
-            // If media is not ready, don't switch to it. Instead get a new media
-            if (box.nextMediaReady) {
-                box.currMedia = box.nextMedia;
-                const infoEl = document.querySelector("#" + box.id + " .info");
-                infoEl.innerHTML = "";
-                if (box.currMedia && box.currMedia.mediaMetadata && box.currMedia.mediaMetadata.creationTime) {
-                    infoEl.innerHTML = (new Date(box.currMedia.mediaMetadata.creationTime)).toLocaleDateString('fi');
-                }
-                box.nextMedia = null;
-                box.prevChange = new Date();
-                let imageEl = document.querySelector("#" + box.id + " .img")
-                if (box.currMedia.mimeType.indexOf('video/') === 0) {
-                    log("Displaying video for box " + box.id)
-                    imageEl.style.display = "none";
-                    player.style.display = 'inline';
-                    const aspectRatio = (box.currMedia.mediaMetadata.width / box.currMedia.mediaMetadata.height);
-                    player.style.width = `${window.innerHeight * aspectRatio}px`
-                    player.play()
-                    console.log(box.currMedia)
-                } else {
-                    log("Displaying image for box " + box.id)
-                    imageEl.style.display = "inline";
-                    imageEl.setAttribute('src', buildFullUrl(box.currMedia))
-                    if (box.id == "right") {
-                        player.style.display = 'none';
-                        player.pause();
-                    }
-                }
-            } else {
-                log("Box " + box.id + " nextMediaReady was false!")
-            }
-            fetchNext(box)
-        }
-    }
-    } catch (err) {
-        initBoxes();
-        for (let box of boxes) {
-            fetchNext(box)
-        }
-        log(err)
-    }
-    setTimeout(mainLoop, 500)
-}
+      },
 
-function fetchPage() {
-    // Fetch a single page from all albums, then wait a bit and do it again.
-    const config = {
-        headers: { Authorization: `Bearer ${apiToken}` }
-    };
-    console.log(albums)
-    if (images.length > 5000) {
-        console.log("Stopping image fetch, more than 5000")
-        return;
-    }
-    for (const album of albums) {
-        let axiosPromise;
-        if (album.pageToken == "stop") {
-            continue;
+      watch: {
+        apiToken() {
+          this.showAlbums();
         }
-        if (album.id === "allMedia") {
-            const pageTokenQuery = !!album.pageToken ? `&pageToken=${album.pageToken}` : '';
-            axiosPromise = axios.get(
-                `https://photoslibrary.googleapis.com/v1/mediaItems?pageSize=100${pageTokenQuery}`,
-                config
-            )
-        } else {
-            axiosPromise = axios.post(
-                'https://photoslibrary.googleapis.com/v1/mediaItems:search',
-                {
-                    "albumId": album.id,
-                    "pageSize": "100",
-                    "pageToken": (album.pageToken || ""),
-                },
-                config
-            )
-        }
-        axiosPromise.then(resp => {
-            album.pageToken = resp.data.nextPageToken;
-            if (!album.pageToken) {
-                album.pageToken = "stop";
-            }
-            for (const mediaItem of resp.data.mediaItems) {
-                if (hiddenMediaIds.has(mediaItem.id)) {
-                    console.log("Mediaitem hidden: ", mediaItem);
-                    continue;
-                }
-                if (mediaItem.mimeType.startsWith('video')) {
-                    videos.push(mediaItem)
-                } else {
-                    images.push(mediaItem)
-                }
-            }
-        })
-    }
-    for (const album of hiddenAlbums) {
-        let axiosPromise;
-        if (album.pageToken == "stop") {
-            continue;
-        }
-        axios.post(
-            'https://photoslibrary.googleapis.com/v1/mediaItems:search',
-            {
-                "albumId": album.id,
-                "pageSize": "100",
-                "pageToken": (album.pageToken || ""),
-            },
-            config
-        ).then(resp => {
-            album.pageToken = resp.data.nextPageToken;
-            if (!album.pageToken) {
-                album.pageToken = "stop";
-            }
-            for (const mediaItem of resp.data.mediaItems) {
-                hiddenMediaIds.add(mediaItem.id)
-            }
-        })
-    }
-    // Wait longer for multiple albums to keep quota better
-    fetchPageTimeout = setTimeout(fetchPage, 10 * 1000 * albums.length);
-}
-
-waitForApiToken = new Promise((resolve, reject) => {
-    const checkApiToken = function() {
-        if (apiToken && albums.length > 0) {
-            document.querySelector("#message").innerHTML = ""
-            resolve()
-        } else {
-            setTimeout(checkApiToken, 500)
-        }
-    }
-    checkApiToken()
-});
-
-waitForApiToken.then(() => {
-    initBoxes();
-    for (let box of boxes) {
-        fetchNext(box)
-    }
-    mainLoop()
-    fetchPage()
-})
-
-window.setData = function(_apiToken, _albums, _hiddens) {
-    apiToken = _apiToken;
-    albums = _albums;
-    hiddenAlbums = _hiddens || [];
-}
-
-window.resetData = function() {
-    images = [];
-    videos = [];
-    // Clear pageToken
-    albums.forEach(album => {
-        album.pageToken = null;
+      }
     })
-    if (fetchPageTimeout){
-        clearTimeout(fetchPageTimeout)
+
+    initializeCastApi = function () {
+      cast.framework.CastContext.getInstance().setOptions({
+        receiverApplicationId: '2BCED06C',
+        autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+      });
+    };
+
+    window['__onGCastApiAvailable'] = function (isAvailable) {
+      if (isAvailable) {
+        initializeCastApi();
+      }
+    };
+
+    function send() {
+      var textEl = document.getElementById("text");
+      sendText(textEl.value);
     }
-    fetchPage();
-}
 
-// empty arrays every 25min
-setTimeout(window.resetData, (25 * 60 * 1000))
+    function sendText(txt) {
+      var castSession = cast.framework.CastContext.getInstance().getCurrentSession();
+      if (castSession) {
+        castSession.sendMessage('urn:x-cast:com.eerovil.chromecast-photos', {
+          type: "message",
+          text: txt
+        });
+      }
+    }
 
-};
-</script>
+    $('#send-data').click(function() {
+      var vueEl = document.querySelector('#vue-app')
+      var castSession = cast.framework.CastContext.getInstance().getCurrentSession();
+      var albumToSend = Object.entries(vueEl.__vue__.selectedAlbums).filter(entry => entry[1]).map(entry => entry[0])
+      console.log(albumToSend)
+      console.log("albumsToHide: ", albumsToHide)
+      if (castSession) {
+        castSession.sendMessage('urn:x-cast:com.eerovil.chromecast-photos', {
+          type: "apiToken",
+          text: vueEl.__vue__.apiToken,
+        });
+        console.log("Sending album: ", vueEl.__vue__.apiToken, albumToSend)
+        castSession.sendMessage('urn:x-cast:com.eerovil.chromecast-photos', {
+          type: "album",
+          text: JSON.stringify(albumToSend),
+        });
+      }
+    })
+
+    var GoogleAuth;
+    var SCOPE = "https://www.googleapis.com/auth/photoslibrary.readonly";
+    function handleClientLoad() {
+      // Load the API's client and auth2 modules.
+      // Call the initClient function after the modules load.
+      gapi.load('client:auth2', initClient);
+    }
+
+    function initClient() {
+      // In practice, your app can retrieve one or more discovery documents.
+      var discoveryUrl = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
+
+      // Initialize the gapi.client object, which app uses to make API requests.
+      // Get API key and client ID from API Console.
+      // 'scope' field specifies space-delimited list of access scopes.
+      gapi.client.init({
+        'apiKey': 'AIzaSyCoNaaX2M9R3Sx4EkCelI2hSvGqbi2LIaE',
+        'clientId': '739631035531-tke7j1166gqm1v5q2lamlo5l6ltf52v3.apps.googleusercontent.com',
+        'discoveryDocs': [discoveryUrl],
+        'scope': SCOPE
+      }).then(function () {
+        GoogleAuth = gapi.auth2.getAuthInstance();
+
+        // Listen for sign-in state changes.
+        GoogleAuth.isSignedIn.listen(updateSigninStatus);
+
+        // Handle initial sign-in state. (Determine if user is already signed in.)
+        var user = GoogleAuth.currentUser.get();
+        setSigninStatus();
+
+        // Call handleAuthClick function when user clicks on
+        //      "Sign In/Authorize" button.
+        $('#sign-in-or-out-button').click(function () {
+          handleAuthClick();
+        });
+        $('#revoke-access-button').click(function () {
+          revokeAccess();
+        });
+      });
+    }
+
+    function handleAuthClick() {
+      if (GoogleAuth.isSignedIn.get()) {
+        // User is authorized and has clicked "Sign out" button.
+        GoogleAuth.signOut();
+      } else {
+        // User is not signed in. Start Google auth flow.
+        GoogleAuth.signIn();
+      }
+    }
+
+    function revokeAccess() {
+      GoogleAuth.disconnect();
+    }
+
+    function setSigninStatus() {
+      var user = GoogleAuth.currentUser.get();
+      var isAuthorized = user.hasGrantedScopes(SCOPE);
+      if (isAuthorized) {
+        $('#sign-in-or-out-button').html('Sign out');
+        $('#revoke-access-button').css('display', 'inline-block');
+        $('#auth-status').html('You are currently signed in and have granted ' +
+          'access to this app.');
+        const authResponse = user.getAuthResponse(true);
+        const apiToken = authResponse.access_token
+
+        document.querySelector('#vue-app').__vue__.apiToken = apiToken
+      } else {
+        $('#sign-in-or-out-button').html('Sign In/Authorize');
+        $('#revoke-access-button').css('display', 'none');
+        $('#auth-status').html('You have not authorized this app or you are ' +
+          'signed out.');
+      }
+    }
+
+    function updateSigninStatus() {
+      setSigninStatus();
+    }
+
+
+  </script>
+  <script async defer src="https://apis.google.com/js/api.js" onload="this.onload=function(){};handleClientLoad()"
+    onreadystatechange="if (this.readyState === 'complete') this.onload()">
+    </script>
 </body>
+
 </html>
