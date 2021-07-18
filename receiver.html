@@ -70,29 +70,13 @@ var boxes = [];
 var apiToken = null;
 var albums = [];
 var fetchPageTimeout = null;
+var slideshow = null;
 var player = document.querySelector("#castMediaElement")
 
 if (window.location.href.indexOf('localhost') == -1) {
     const context = cast.framework.CastReceiverContext.getInstance();
     context.addCustomMessageListener('urn:x-cast:com.eerovil.chromecast-photos', function (customEvent) {
-        if (customEvent.data.type == "message") {
-            document.getElementById("message").innerHTML = customEvent.data.text;
-            if (customEvent.data.text && customEvent.data.text.startsWith('https')) {
-                baseUrl = customEvent.data.text;
-                log("baseUrl updated to " + baseUrl)
-            }
-        }
-        if (customEvent.data.type == "apiToken") {
-            console.log("Got api token!")
-            apiToken = customEvent.data.text;
-        }
-        if (customEvent.data.type == "albums") {
-            albums = JSON.parse(customEvent.data.text).map(albumId => ({id: albumId}));
-            albums[0].mediaItems = []
-            albums[0].videos = []
-            albums[0].images = []
-            console.log("Got albums:", albums)
-        }
+        window.handleEvent(customEvent)
     });
     // Cast api will automatically use castMediaElement as player
     const playerManager = context.getPlayerManager();
@@ -204,7 +188,40 @@ function fetchNext(box) {
     }
 }
 
+function showNext(box) {
+    box.currMedia = box.nextMedia;
+    const infoEl = document.querySelector("#" + box.id + " .info");
+    infoEl.innerHTML = "";
+    if (box.currMedia && box.currMedia.mediaMetadata && box.currMedia.mediaMetadata.creationTime) {
+        infoEl.innerHTML = (new Date(box.currMedia.mediaMetadata.creationTime)).toLocaleDateString('fi');
+    }
+    box.nextMedia = null;
+    box.prevChange = new Date();
+    let imageEl = document.querySelector("#" + box.id + " .img")
+    if (box.currMedia.mimeType.indexOf('video/') === 0) {
+        log("Displaying video for box " + box.id)
+        imageEl.style.display = "none";
+        player.style.display = 'inline';
+        const aspectRatio = (box.currMedia.mediaMetadata.width / box.currMedia.mediaMetadata.height);
+        player.style.width = `${window.innerHeight * aspectRatio}px`
+        player.play()
+        console.log(box.currMedia)
+    } else {
+        log("Displaying image for box " + box.id)
+        imageEl.style.display = "inline";
+        imageEl.setAttribute('src', buildFullUrl(box.currMedia))
+        if (box.id == "right") {
+            player.style.display = 'none';
+            player.pause();
+        }
+    }
+}
+
 function mainLoop() {
+    if (!slideshow) {
+        setTimeout(mainLoop, 500)
+        return;
+    }
     try {
     for (let box of boxes) {
         const now = new Date();
@@ -222,32 +239,7 @@ function mainLoop() {
             log("Box " + box.id + " shouldChange" + (hasError ? " has error!" : ""))
             // If media is not ready, don't switch to it. Instead get a new media
             if (box.nextMediaReady) {
-                box.currMedia = box.nextMedia;
-                const infoEl = document.querySelector("#" + box.id + " .info");
-                infoEl.innerHTML = "";
-                if (box.currMedia && box.currMedia.mediaMetadata && box.currMedia.mediaMetadata.creationTime) {
-                    infoEl.innerHTML = (new Date(box.currMedia.mediaMetadata.creationTime)).toLocaleDateString('fi');
-                }
-                box.nextMedia = null;
-                box.prevChange = new Date();
-                let imageEl = document.querySelector("#" + box.id + " .img")
-                if (box.currMedia.mimeType.indexOf('video/') === 0) {
-                    log("Displaying video for box " + box.id)
-                    imageEl.style.display = "none";
-                    player.style.display = 'inline';
-                    const aspectRatio = (box.currMedia.mediaMetadata.width / box.currMedia.mediaMetadata.height);
-                    player.style.width = `${window.innerHeight * aspectRatio}px`
-                    player.play()
-                    console.log(box.currMedia)
-                } else {
-                    log("Displaying image for box " + box.id)
-                    imageEl.style.display = "inline";
-                    imageEl.setAttribute('src', buildFullUrl(box.currMedia))
-                    if (box.id == "right") {
-                        player.style.display = 'none';
-                        player.pause();
-                    }
-                }
+                showNext(box)
             } else {
                 log("Box " + box.id + " nextMediaReady was false!")
             }
@@ -315,7 +307,7 @@ function fetchPage() {
 
 waitForApiToken = new Promise((resolve, reject) => {
     const checkApiToken = function() {
-        if (apiToken && albums.length > 0) {
+        if (apiToken) {
             document.querySelector("#message").innerHTML = ""
             resolve()
         } else {
@@ -340,6 +332,34 @@ window.setData = function(_apiToken, _albums) {
     albums[0].mediaItems = []
     albums[0].videos = []
     albums[0].images = []
+}
+
+window.handleEvent = function(customEvent) {
+    if (customEvent.data.type == "message") {
+        document.getElementById("message").innerHTML = customEvent.data.text;
+        if (customEvent.data.text && customEvent.data.text.startsWith('https')) {
+            baseUrl = customEvent.data.text;
+            log("baseUrl updated to " + baseUrl)
+        }
+    }
+    if (customEvent.data.type == "apiToken") {
+        console.log("Got api token!")
+        apiToken = customEvent.data.text;
+    }
+    if (customEvent.data.type == "albums") {
+        albums = JSON.parse(customEvent.data.text).map(albumId => ({id: albumId}));
+        albums[0].mediaItems = []
+        albums[0].videos = []
+        albums[0].images = []
+        console.log("Got albums:", albums)
+    }
+    if (customEvent.data.type == "selectedMedia") {
+        const selectedMedia = JSON.parse(customEvent.data.text)
+        boxes[0].nextMedia = selectedMedia;
+        preloadMediaItem(boxes[0])
+        showNext(boxes[0])
+        console.log("Got selectedMedia:", selectedMedia)
+    }
 }
 
 window.resetData = function() {
